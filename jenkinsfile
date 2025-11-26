@@ -2,23 +2,28 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = "us-east-1"
-        ECR_REGISTRY = "189598237274.dkr.ecr.us-east-1.amazonaws.com"
-        ECR_REPO = "zeeshan-agency01"
+        AWS_REGION      = "us-east-1"
+        ECR_REGISTRY    = "189598237274.dkr.ecr.us-east-1.amazonaws.com"
+        ECR_REPO        = "zeeshan.agency"
+        FULL_IMAGE      = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan.agency:latest"
+        CONTAINER_NAME  = "zeeshan-app"
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/zeeshaan02/jenkins012.git'
             }
         }
 
         stage('Login to AWS ECR') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'aws-cred', 
-                                                usernameVariable: 'AWS_ACCESS_KEY_ID', 
-                                                passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'aws-cred',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
                     sh '''
                         aws ecr get-login-password --region $AWS_REGION | \
                         docker login --username AWS --password-stdin $ECR_REGISTRY
@@ -29,19 +34,40 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $ECR_REPO .'
+                sh '''
+                    docker build -t $ECR_REPO .
+                '''
             }
         }
 
         stage('Tag Docker Image') {
             steps {
-                sh 'docker tag $ECR_REPO:latest $ECR_REGISTRY/$ECR_REPO:latest'
+                sh '''
+                    docker tag $ECR_REPO:latest $FULL_IMAGE
+                '''
             }
         }
 
-        stage('Push Image to ECR') {
+        stage('Push to ECR') {
             steps {
-                sh 'docker push $ECR_REGISTRY/$ECR_REPO:latest'
+                sh '''
+                    docker push $FULL_IMAGE
+                '''
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                sh '''
+                    echo "Stopping old container if running..."
+                    docker stop $CONTAINER_NAME || true
+                    docker rm $CONTAINER_NAME || true
+
+                    echo "Running the latest container..."
+                    docker run -d --name $CONTAINER_NAME -p 5000:5000 $FULL_IMAGE
+
+                    echo "Deployment successful!"
+                '''
             }
         }
     }
