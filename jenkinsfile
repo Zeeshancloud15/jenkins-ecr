@@ -5,6 +5,9 @@ pipeline {
         AWS_REGION = "us-east-1"
         ECR_REPO = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan.agency"
         IMAGE_TAG = "latest"
+        EC2_USER = "ubuntu"
+        EC2_IP = "3.235.188.77"           // Public IP for SSH
+        SSH_KEY = "/var/lib/jenkins/.ssh/your-key.pem"  // Private key path
     }
 
     stages {
@@ -45,7 +48,7 @@ pipeline {
         stage('Deploy on EC2') {
             steps {
                 sh """
-                ssh -o StrictHostKeyChecking=no ec2-user@34.238.189.111 << 'EOF'
+                ssh -i $SSH_KEY -o StrictHostKeyChecking=no $EC2_USER@$EC2_IP << 'EOF'
                     sudo docker pull $ECR_REPO:$IMAGE_TAG
                     sudo docker stop app || true
                     sudo docker rm app || true
