@@ -6,7 +6,7 @@ pipeline {
         ECR_REPO = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan.agency"
         IMAGE_TAG = "latest"
         EC2_USER = "ubuntu"
-        EC2_IP = "44.200.181.75"           // Public IP for SSH
+        EC2_IP = "44.192.114.183"           // Public IP for SSH
         SSH_KEY = "/var/lib/jenkins/.ssh/your-key.pem"  // Private key path
     }
 
