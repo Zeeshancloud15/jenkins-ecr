@@ -3,11 +3,11 @@ pipeline {
 
     environment {
         AWS_REGION = "us-east-1"
-        ECR_REPO = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan.agency"
-        IMAGE_TAG = "latest"
-        EC2_USER = "ubuntu"
-        EC2_IP = "34.227.191.71"           // Public IP of EC2
-        SSH_KEY = "/var/lib/jenkins/.ssh/your-key.pem"  // Jenkins private key path
+        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshancloud"
+        IMAGE_TAG  = "${env.BUILD_NUMBER}"     // Unique per build
+        EC2_USER   = "ubuntu"
+        EC2_IP     = "3.236.190.226"
+        CONTAINER_NAME = "app_${env.BUILD_NUMBER}"  // Unique container per build
     }
 
     stages {
@@ -21,11 +21,16 @@ pipeline {
 
         stage('Login to AWS ECR') {
             steps {
-                sh """
-                export PATH=\$PATH:/usr/local/bin
-                aws ecr get-login-password --region $AWS_REGION \
-                | docker login --username AWS --password-stdin $ECR_REPO
-                """
+                // Use Jenkins AWS credentials
+                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', 
+                                                  usernameVariable: 'AWS_ACCESS_KEY_ID', 
+                                                  passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh """
+                    export PATH=\$PATH:/usr/local/bin
+                    aws ecr get-login-password --region $AWS_REGION \
+                    | docker login --username AWS --password-stdin $ECR_REPO
+                    """
+                }
             }
         }
 
@@ -38,31 +43,36 @@ pipeline {
             }
         }
 
-        stage('Push Image to ECR') {
+        stage('Push Docker Image to ECR') {
             steps {
-                sh """
-                docker push $ECR_REPO:$IMAGE_TAG
-                """
+                sh "docker push $ECR_REPO:$IMAGE_TAG"
             }
         }
 
         stage('Deploy on EC2') {
             steps {
-                sh """
-                ssh -i $SSH_KEY -o StrictHostKeyChecking=no $EC2_USER@$EC2_IP << EOF
-                    docker pull $ECR_REPO:$IMAGE_TAG
-                    docker stop app || true
-                    docker rm app || true
-                    docker run -d -p 5000:5000 --name app $ECR_REPO:$IMAGE_TAG
+                // Use Jenkins SSH credentials (ID: ec2-ssh-creds)
+                sshagent(['ec2-ssh-creds']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_IP << EOF
+                        # Pull latest image
+                        docker pull $ECR_REPO:$IMAGE_TAG
+                        
+                        # Run new container with unique name
+                        docker run -d -p 5000:5000 --name $CONTAINER_NAME $ECR_REPO:$IMAGE_TAG
+                        
+                        # Optional: remove old containers except the latest 3
+                        docker ps -a --format "{{.Names}}" | grep '^app_' | sort | head -n -3 | xargs -r docker rm -f
 EOF
-                """
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline executed successfully!"
+            echo "✅ Pipeline executed successfully! New container: $CONTAINER_NAME"
         }
         failure {
             echo "❌ Pipeline failed!"
