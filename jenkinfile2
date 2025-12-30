@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION = "us-east-1"
-        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan.agency"
+        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshancloud"
         IMAGE_NAME = "zeeshan-app"
     }
 
@@ -12,7 +12,7 @@ pipeline {
         stage('Clone Code') {
             steps {
                 git branch: 'main',
-                url: 'https://github.com/zeeshaan02/jenkins-ecr.git'
+                url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git'
             }
         }
 
