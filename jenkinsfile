@@ -3,10 +3,10 @@ pipeline {
 
     environment {
         AWS_REGION = "us-east-1"
-        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshancloud"
+        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan-agency"
         IMAGE_TAG  = "${env.BUILD_NUMBER}"     // Unique per build
         EC2_USER   = "ubuntu"
-        EC2_IP     = "3.236.190.226"
+        EC2_IP     = "174.129.71.109"
         CONTAINER_NAME = "app_${env.BUILD_NUMBER}"  // Unique container per build
     }
 
