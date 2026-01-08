@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION = "us-east-1"
-        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshancloud"
+        ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan-agency"
         IMAGE_NAME = "zeeshan-app"
     }
 
