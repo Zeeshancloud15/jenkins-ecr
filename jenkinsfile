@@ -4,10 +4,8 @@ pipeline {
     environment {
         AWS_REGION = "us-east-1"
         ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan-agency"
-        IMAGE_TAG  = "${env.BUILD_NUMBER}"     // Unique per build
-        EC2_USER   = "ubuntu"
-        EC2_IP     = "174.129.71.109"
-        CONTAINER_NAME = "app_${env.BUILD_NUMBER}"  // Unique container per build
+        IMAGE_TAG  = "${env.BUILD_NUMBER}" 
+        CONTAINER_NAME = "app_${env.BUILD_NUMBER}"  
     }
 
     stages {
@@ -21,12 +19,10 @@ pipeline {
 
         stage('Login to AWS ECR') {
             steps {
-                // Use Jenkins AWS credentials
                 withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', 
                                                   usernameVariable: 'AWS_ACCESS_KEY_ID', 
                                                   passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh """
-                    export PATH=\$PATH:/usr/local/bin
                     aws ecr get-login-password --region $AWS_REGION \
                     | docker login --username AWS --password-stdin $ECR_REPO
                     """
@@ -34,38 +30,31 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Push Docker Image') {
             steps {
                 sh """
                 docker build -t zeeshan-app .
                 docker tag zeeshan-app:latest $ECR_REPO:$IMAGE_TAG
+                docker push $ECR_REPO:$IMAGE_TAG
                 """
             }
         }
 
-        stage('Push Docker Image to ECR') {
+        stage('Deploy on Same EC2') {
             steps {
-                sh "docker push $ECR_REPO:$IMAGE_TAG"
-            }
-        }
+                sh """
+                # Remove old container if exists
+                docker rm -f webapp || true
 
-        stage('Deploy on EC2') {
-            steps {
-                // Use Jenkins SSH credentials (ID: ec2-ssh-creds)
-                sshagent(['ec2-ssh-creds']) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_IP << EOF
-                        # Pull latest image
-                        docker pull $ECR_REPO:$IMAGE_TAG
-                        
-                        # Run new container with unique name
-                        docker run -d -p 5000:5000 --name $CONTAINER_NAME $ECR_REPO:$IMAGE_TAG
-                        
-                        # Optional: remove old containers except the latest 3
-                        docker ps -a --format "{{.Names}}" | grep '^app_' | sort | head -n -3 | xargs -r docker rm -f
-EOF
-                    """
-                }
+                # Pull latest image
+                docker pull $ECR_REPO:$IMAGE_TAG
+
+                # Run new container
+                docker run -d -p 5000:5000 --name $CONTAINER_NAME $ECR_REPO:$IMAGE_TAG
+
+                # Optional: remove old containers except latest 3
+                docker ps -a --format "{{.Names}}" | grep '^app_' | sort | head -n -3 | xargs -r docker rm -f
+                """
             }
         }
     }
