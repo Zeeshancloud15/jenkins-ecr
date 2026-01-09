@@ -1,23 +1,28 @@
 pipeline {
-    agent { label 'docker-worker' }
+    agent any
 
     environment {
         AWS_REGION = "us-east-1"
         ECR_REPO   = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan-agency"
         IMAGE_TAG  = "${env.BUILD_NUMBER}"
+        REMOTE_USER = "zeeshan"
+        REMOTE_IP   = "172.31.19.57"
         CONTAINER_NAME = "app_${env.BUILD_NUMBER}"
     }
 
     stages {
         stage('Clone Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/zeeshaan02/jenkins-ecr.git'
+                git branch: 'main',
+                    url: 'https://github.com/zeeshaan02/jenkins-ecr.git'
             }
         }
 
         stage('Login to AWS ECR') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds2', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds', 
+                                                  usernameVariable: 'AWS_ACCESS_KEY_ID', 
+                                                  passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh """
                     aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
                     """
@@ -34,25 +39,34 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Push Docker Image to ECR') {
             steps {
                 sh "docker push $ECR_REPO:$IMAGE_TAG"
             }
         }
 
-        stage('Deploy Container') {
+        stage('Deploy on Remote Server') {
             steps {
-                sh """
-                docker pull $ECR_REPO:$IMAGE_TAG
-                docker rm -f $CONTAINER_NAME || true
-                docker run -d -p 5000:5000 --name $CONTAINER_NAME $ECR_REPO:$IMAGE_TAG
-                """
+                sshagent(['remote-ssh-creds']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_IP << EOF
+                        docker pull $ECR_REPO:$IMAGE_TAG
+                        docker stop $CONTAINER_NAME || true
+                        docker rm $CONTAINER_NAME || true
+                        docker run -d -p 5000:5000 --name $CONTAINER_NAME $ECR_REPO:$IMAGE_TAG
+EOF
+                    """
+                }
             }
         }
     }
 
     post {
-        success { echo "✅ Deployment done: $CONTAINER_NAME" }
-        failure { echo "❌ Deployment failed!" }
+        success {
+            echo "✅ Deployment successful on $REMOTE_IP!"
+        }
+        failure {
+            echo "❌ Deployment failed!"
+        }
     }
 }
