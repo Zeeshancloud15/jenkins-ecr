@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        REMOTE_HOST = "98.94.32.42"   // Your remote server IP
+        REMOTE_HOST = "172.31.28.25"   // Your remote server IP
         REMOTE_USER = "zeeshan"       // Remote user
         APP_NAME = "myapp"
     }
