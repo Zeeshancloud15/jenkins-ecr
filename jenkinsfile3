@@ -2,40 +2,50 @@ pipeline {
     agent any
 
     environment {
-        REMOTE_HOST = "172.31.28.25"   // Your remote server IP
-        REMOTE_USER = "zeeshan"       // Remote user
+        REMOTE_HOST = "172.31.28.25"
+        REMOTE_USER = "zeeshan"
         APP_NAME = "myapp"
+        IMAGE_NAME = "myapp:latest"
     }
 
     stages {
+
         stage('Build App') {
             steps {
                 echo "Building application..."
-                sh 'echo "This is where your app build commands go"'
+                sh 'echo This is where your app build commands go'
             }
         }
 
         stage('Test App') {
             steps {
                 echo "Running tests..."
-                sh 'echo "This is where your test commands go"'
+                sh 'echo This is where your test commands go'
             }
         }
 
         stage('Docker Build') {
             steps {
                 echo "Building Docker image..."
-                sh 'docker build -t myapp .'
+                sh "docker build -t ${IMAGE_NAME} ."
             }
         }
 
         stage('Deploy on Remote Server') {
             steps {
-                sshagent(['zeeshan-ssh-key']) { // Your SSH key credential
+                sshagent(['zeeshan-ssh-key']) {
                     sh """
-                    ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST '
-                        docker rm -f $APP_NAME || true &&
-                        docker run -d -p 80:80 --name $APP_NAME $APP_NAME:latest
+                    # Save Docker image as tar
+                    docker save ${IMAGE_NAME} -o ${APP_NAME}.tar
+
+                    # Copy tar to remote server
+                    scp -o StrictHostKeyChecking=no ${APP_NAME}.tar ${REMOTE_USER}@${REMOTE_HOST}:/home/${REMOTE_USER}/
+
+                    # Load image and run container on remote server
+                    ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        docker load -i /home/${REMOTE_USER}/${APP_NAME}.tar &&
+                        docker rm -f ${APP_NAME} || true &&
+                        docker run -d -p 80:80 --name ${APP_NAME} ${IMAGE_NAME}
                     '
                     """
                 }
