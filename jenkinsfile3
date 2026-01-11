@@ -4,27 +4,23 @@ pipeline {
     environment {
         AWS_REGION = "ap-south-1"
         ECR_REPO = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/myapp"
-        REMOTE_HOST = "98.94.32.42"
-        REMOTE_USER = "zeeshan"
+        REMOTE_HOST = "98.94.32.42"    // Remote server IP
+        REMOTE_USER = "zeeshan"        // Remote server user
     }
 
     stages {
 
-        stage('Clone Code') {
-            steps {
-                git 'https://github.com/Zeeshancloud15/jenkins-ecr.git'
-            }
-        }
-
         stage('Build App') {
             steps {
                 sh 'echo "Building application..."'
+                // Replace with your actual build commands if needed
             }
         }
 
         stage('Test App') {
             steps {
                 sh 'echo "Running tests..."'
+                // Replace with your test commands
             }
         }
 
@@ -38,9 +34,10 @@ pipeline {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-ecr-creds01'
+                    credentialsId: 'aws-ecr-creds01'  // AWS credentials
                 ]]) {
                     sh '''
+                    echo "Logging in to AWS ECR..."
                     aws ecr get-login-password --region $AWS_REGION | \
                     docker login --username AWS --password-stdin $ECR_REPO
                     '''
@@ -48,7 +45,7 @@ pipeline {
             }
         }
 
-        stage('Push Image to ECR') {
+        stage('Push Docker Image to ECR') {
             steps {
                 sh '''
                 docker tag myapp:latest $ECR_REPO:latest
@@ -59,11 +56,14 @@ pipeline {
 
         stage('Deploy on Remote Server') {
             steps {
-                sshagent(['zeeshan-ssh-key']) {
+                sshagent(['zeeshan-ssh-key']) {  // SSH key for remote server
                     sh '''
                     ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "
+                        echo 'Pulling latest Docker image...'
                         docker pull $ECR_REPO:latest &&
+                        echo 'Stopping old container if exists...'
                         docker rm -f myapp || true &&
+                        echo 'Starting new container...'
                         docker run -d -p 80:80 --name myapp $ECR_REPO:latest
                     "
                     '''
