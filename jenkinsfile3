@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION = "ap-south-1"
-        ECR_REPO = "123456789012.dkr.ecr.ap-south-1.amazonaws.com/myapp"
+        ECR_REPO = "189598237274.dkr.ecr.us-east-1.amazonaws.com/zeeshan-agency"
         REMOTE_HOST = "98.94.32.42"    // Remote server IP
         REMOTE_USER = "zeeshan"        // Remote server user
     }
