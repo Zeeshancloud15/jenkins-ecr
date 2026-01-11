@@ -45,7 +45,7 @@ pipeline {
                     ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
                         docker load -i /home/${REMOTE_USER}/${APP_NAME}.tar &&
                         docker rm -f ${APP_NAME} || true &&
-                        docker run -d -p 80:80 --name ${APP_NAME} ${IMAGE_NAME}
+                        docker run -d -p 8080:80 --name ${APP_NAME} ${IMAGE_NAME}
                     '
                     """
                 }
