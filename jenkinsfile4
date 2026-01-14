@@ -2,41 +2,38 @@ pipeline {
     agent any
 
     environment {
-        BLUE_SERVER_IP = "54.242.239.106"    // Blue server public IP
-        GREEN_SERVER_IP = "98.93.30.214"    // Green server public IP
-        APP_PATH = "/var/www/html"          // Path on servers
-        SSH_CREDENTIALS = "blue-green-ssh" // Jenkins SSH credential ID
+        BLUE_TG_ARN  = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/blue-tg/abc123"
+        GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/green-tg/def456"
+        LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/789abc/123def"
+        GREEN_SERVER = "jenkins@98.93.30.214"
+        BLUE_SERVER  = "jenkins@54.242.239.106"
+        SSH_CREDENTIALS = "jenkins"
     }
 
     stages {
         stage('Checkout Code') {
             steps {
                 echo "Checking out repository..."
-                checkout([$class: 'GitSCM',
-                          branches: [[name: '*/main']],
-                          userRemoteConfigs: [[url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
-                                               credentialsId: 'blue-green-ssh']]])
+                checkout scm
             }
         }
 
         stage('Prepare index.html') {
             steps {
-                sshagent([env.SSH_CREDENTIALS]) {
+                sshagent([SSH_CREDENTIALS]) {
                     echo "Pulling index.html from BLUE server..."
-                    sh """
-                        scp -o StrictHostKeyChecking=no jenkins@${BLUE_SERVER_IP}:${APP_PATH}/index.html ${WORKSPACE}/
-                    """
+                    sh "scp -o StrictHostKeyChecking=no ${BLUE_SERVER}:/var/www/html/index.html ."
                 }
             }
         }
 
         stage('Deploy to GREEN') {
             steps {
-                sshagent([env.SSH_CREDENTIALS]) {
+                sshagent([SSH_CREDENTIALS]) {
                     echo "Deploying index.html to GREEN server..."
-                    sh """
-                        scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${GREEN_SERVER_IP}:${APP_PATH}/
-                    """
+                    sh "scp -o StrictHostKeyChecking=no index.html ${GREEN_SERVER}:/var/www/html/"
+                    // Optional: fix permissions if needed
+                    sh "ssh -o StrictHostKeyChecking=no ${GREEN_SERVER} 'sudo chown apache:apache /var/www/html/index.html'"
                 }
             }
         }
@@ -44,33 +41,40 @@ pipeline {
         stage('Health Check') {
             steps {
                 echo "Checking GREEN server health..."
-                sh """
-                    STATUS=\$(ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER_IP} 'curl -s -o /dev/null -w "%{http_code}" http://localhost/index.html')
-                    echo "HTTP Status: \$STATUS"
-                    if [ "\$STATUS" != "200" ]; then
-                        echo "Health check failed!"
-                        exit 1
-                    fi
-                """
+                script {
+                    def status = sh(
+                        script: "ssh -o StrictHostKeyChecking=no ${GREEN_SERVER} 'curl -s -o /dev/null -w \"%{http_code}\" http://localhost/index.html'",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "HTTP Status: ${status}"
+                    if (status != '200') {
+                        error "Health check failed!"
+                    }
+                }
             }
         }
 
         stage('Switch Traffic') {
             steps {
-                echo "Switching traffic to GREEN server..."
-                // Add your load balancer or DNS switch commands here
+                echo "Switching ALB traffic to GREEN target group..."
+                sh """
+                aws elbv2 modify-listener \
+                    --listener-arn ${LISTENER_ARN} \
+                    --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
+                """
             }
         }
     }
 
     post {
         failure {
-            echo "Deployment failed! Rolling back to BLUE server..."
-            sshagent([env.SSH_CREDENTIALS]) {
-                sh """
-                    scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${BLUE_SERVER_IP}:${APP_PATH}/
-                """
-            }
+            echo "Deployment failed! Rolling back to BLUE target group..."
+            sh """
+            aws elbv2 modify-listener \
+                --listener-arn ${LISTENER_ARN} \
+                --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
+            """
         }
     }
 }
