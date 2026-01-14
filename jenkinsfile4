@@ -6,10 +6,9 @@ pipeline {
         REMOTE_PATH = "/var/www/html/index.html"
         LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
 
-        # Replace this with your actual listener ARN from AWS
+        // Replace ALB_LISTENER_ARN with your actual listener ARN from AWS
         ALB_LISTENER_ARN = "LISTENER_ARN_HERE"
 
-        # Correct target group ARNs
         BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b"
         GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043"
     }
