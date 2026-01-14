@@ -2,26 +2,39 @@ pipeline {
     agent any
 
     environment {
-        GREEN_SERVER_IP = "98.93.30.214"
-        BLUE_SERVER_IP  = "54.242.239.106"
-        APP_PATH        = "/var/www/html"
+        BLUE_SERVER_IP = "54.242.239.106"    // Blue server public IP
+        GREEN_SERVER_IP = "98.93.30.214"    // Green server public IP
+        APP_PATH = "/var/www/html"          // Path on servers
+        SSH_CREDENTIALS = "blue-green-ssh" // Jenkins SSH credential ID
     }
 
     stages {
-
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
-                    credentialsId: 'blue-green-ssh'
+                echo "Checking out repository..."
+                checkout([$class: 'GitSCM',
+                          branches: [[name: '*/main']],
+                          userRemoteConfigs: [[url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
+                                               credentialsId: 'blue-green-ssh']]])
             }
         }
 
-        stage('Deploy to Green') {
+        stage('Prepare index.html') {
             steps {
-                sshagent(['blue-green-ssh']) {
+                sshagent([env.SSH_CREDENTIALS]) {
+                    echo "Pulling index.html from BLUE server..."
                     sh """
-                        echo "Deploying to GREEN server..."
+                        scp -o StrictHostKeyChecking=no jenkins@${BLUE_SERVER_IP}:${APP_PATH}/index.html ${WORKSPACE}/
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to GREEN') {
+            steps {
+                sshagent([env.SSH_CREDENTIALS]) {
+                    echo "Deploying index.html to GREEN server..."
+                    sh """
                         scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${GREEN_SERVER_IP}:${APP_PATH}/
                     """
                 }
@@ -30,38 +43,34 @@ pipeline {
 
         stage('Health Check') {
             steps {
-                script {
-                    echo "Performing health check on GREEN server..."
-                    def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://${GREEN_SERVER_IP}/index.html", returnStdout: true).trim()
-                    if (status != "200") {
-                        error "Health check failed! HTTP status: ${status}"
-                    } else {
-                        echo "Health check passed!"
-                    }
-                }
+                echo "Checking GREEN server health..."
+                sh """
+                    STATUS=\$(ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER_IP} 'curl -s -o /dev/null -w "%{http_code}" http://localhost/index.html')
+                    echo "HTTP Status: \$STATUS"
+                    if [ "\$STATUS" != "200" ]; then
+                        echo "Health check failed!"
+                        exit 1
+                    fi
+                """
             }
         }
 
         stage('Switch Traffic') {
             steps {
-                echo "Switching traffic to GREEN..."
-                // Add your load balancer / DNS switch commands here if needed
+                echo "Switching traffic to GREEN server..."
+                // Add your load balancer or DNS switch commands here
             }
         }
-
     }
 
     post {
         failure {
-            echo "Deployment failed! Rolling back to BLUE..."
-            sshagent(['blue-green-ssh']) {
+            echo "Deployment failed! Rolling back to BLUE server..."
+            sshagent([env.SSH_CREDENTIALS]) {
                 sh """
                     scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${BLUE_SERVER_IP}:${APP_PATH}/
                 """
             }
-        }
-        always {
-            echo "Cleaning up..."
         }
     }
 }
