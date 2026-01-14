@@ -22,7 +22,7 @@ pipeline {
 
         stage('Deploy to Green') {
             steps {
-                sshagent(['blue-green-ssh1']) {
+                sshagent(['blue-green-ssh']) {
                     sh """
                     # Copy files to Green server
                     scp -o StrictHostKeyChecking=no index.html jenkins@${GREEN_SERVER_IP}:/var/www/html/
