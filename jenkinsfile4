@@ -1,39 +1,44 @@
 pipeline {
     agent any
-
     environment {
-        BLUE_TG_ARN  = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/blue-tg/abc123"
+        BLUE_SERVER = "54.242.239.106"
+        GREEN_SERVER = "98.93.30.214"
+        REMOTE_PATH = "/var/www/html/index.html"
+        LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
+        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/789abc/123def"
+        BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/blue-tg/abc123"
         GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/green-tg/def456"
-        LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/789abc/123def"
-        GREEN_SERVER = "jenkins@98.93.30.214"
-        BLUE_SERVER  = "jenkins@54.242.239.106"
-        SSH_CREDENTIALS = "jenkins"
     }
-
     stages {
-        stage('Checkout Code') {
+        stage('Checkout SCM') {
             steps {
-                echo "Checking out repository..."
-                checkout scm
+                echo "Checking out source code..."
+                git(
+                    url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
+                    credentialsId: 'blue-green-ssh',
+                    branch: 'main'
+                )
             }
         }
 
         stage('Prepare index.html') {
             steps {
-                sshagent([SSH_CREDENTIALS]) {
-                    echo "Pulling index.html from BLUE server..."
-                    sh "scp -o StrictHostKeyChecking=no ${BLUE_SERVER}:/var/www/html/index.html ."
+                echo "Pulling index.html from BLUE server..."
+                sshagent(['blue-green-ssh']) {
+                    sh "scp -o StrictHostKeyChecking=no jenkins@${BLUE_SERVER}:${REMOTE_PATH} ${LOCAL_WORKSPACE_FILE}"
                 }
             }
         }
 
         stage('Deploy to GREEN') {
             steps {
-                sshagent([SSH_CREDENTIALS]) {
-                    echo "Deploying index.html to GREEN server..."
-                    sh "scp -o StrictHostKeyChecking=no index.html ${GREEN_SERVER}:/var/www/html/"
-                    // Optional: fix permissions if needed
-                    sh "ssh -o StrictHostKeyChecking=no ${GREEN_SERVER} 'sudo chown apache:apache /var/www/html/index.html'"
+                echo "Deploying index.html to GREEN server..."
+                sshagent(['blue-green-ssh']) {
+                    // Use sudo if permission denied
+                    sh """
+                    scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH} || \
+                    ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} 'sudo cp ${REMOTE_PATH} ${REMOTE_PATH}'
+                    """
                 }
             }
         }
@@ -41,27 +46,23 @@ pipeline {
         stage('Health Check') {
             steps {
                 echo "Checking GREEN server health..."
-                script {
-                    def status = sh(
-                        script: "ssh -o StrictHostKeyChecking=no ${GREEN_SERVER} 'curl -s -o /dev/null -w \"%{http_code}\" http://localhost/index.html'",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "HTTP Status: ${status}"
-                    if (status != '200') {
-                        error "Health check failed!"
+                sshagent(['blue-green-ssh']) {
+                    script {
+                        def status = sh(script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w '%{http_code}' http://localhost/index.html", returnStdout: true).trim()
+                        echo "HTTP Status: ${status}"
+                        if (status != "200") {
+                            error "GREEN server health check failed!"
+                        }
                     }
                 }
             }
         }
 
-        stage('Switch Traffic') {
+        stage('Switch Traffic to GREEN') {
             steps {
-                echo "Switching ALB traffic to GREEN target group..."
+                echo "Switching traffic to GREEN target group..."
                 sh """
-                aws elbv2 modify-listener \
-                    --listener-arn ${LISTENER_ARN} \
-                    --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
+                aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
                 """
             }
         }
@@ -69,11 +70,9 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment failed! Rolling back to BLUE target group..."
+            echo "Deployment failed! Rolling back to BLUE..."
             sh """
-            aws elbv2 modify-listener \
-                --listener-arn ${LISTENER_ARN} \
-                --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
+            aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
             """
         }
     }
