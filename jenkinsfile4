@@ -6,8 +6,8 @@ pipeline {
         REMOTE_PATH = "/var/www/html/index.html"
         LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
 
-        // Replace ALB_LISTENER_ARN with your actual listener ARN from AWS
-        ALB_LISTENER_ARN = "LISTENER_ARN_HERE"
+        // ALB Listener ARN for HTTP 80
+        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/339494166"
 
         BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b"
         GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043"
@@ -37,9 +37,7 @@ pipeline {
             steps {
                 echo "Deploying index.html to GREEN server..."
                 sshagent(['blue-green-ssh']) {
-                    sh """
-                    scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH}
-                    """
+                    sh "scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH}"
                 }
             }
         }
