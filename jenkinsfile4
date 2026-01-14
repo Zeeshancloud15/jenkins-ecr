@@ -1,35 +1,18 @@
 pipeline {
     agent any
-    environment {
-        // Target Groups
-        BLUE_TG = "blue-tg"
-        GREEN_TG = "green-tg"
-        
-        // ALB Listener ARN (replace this with actual listener ARN from AWS)
-        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/xxxxxxxxxxxxxxxx" 
-
-        // Servers
-        BLUE_SERVER = "jenkins@54.242.239.106"
-        GREEN_SERVER = "jenkins@98.93.30.214"
-
-        // Git repo
-        GIT_REPO = "https://github.com/Zeeshancloud15/jenkins-ecr.git"
-    }
-
     stages {
         stage('Checkout Code') {
             steps {
-                git branch: 'main', url: "${GIT_REPO}"
+                git branch: 'main', url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git'
             }
         }
 
         stage('Deploy to Green') {
             steps {
-                // SSH Agent plugin required
                 sshagent(['blue-green-ssh']) {
                     sh """
-                    scp -o StrictHostKeyChecking=no index.html $GREEN_SERVER:/var/www/html/index.html
-                    ssh $GREEN_SERVER 'sudo systemctl restart httpd'
+                    scp -o StrictHostKeyChecking=no index.html jenkins@<GREEN_SERVER_IP>:/var/www/html/
+                    ssh -o StrictHostKeyChecking=no jenkins@<GREEN_SERVER_IP> 'sudo systemctl restart httpd'
                     """
                 }
             }
@@ -37,17 +20,16 @@ pipeline {
 
         stage('Health Check') {
             steps {
-                // Simple health check of Green server
-                sh 'curl -f http://98.93.30.214 || exit 1'
+                sh "curl -I http://<GREEN_SERVER_IP> || exit 1"
             }
         }
 
-        stage('Switch Traffic to Green') {
+        stage('Switch Traffic') {
             steps {
                 sh """
                 aws elbv2 modify-listener \
-                  --listener-arn $ALB_LISTENER_ARN \
-                  --default-actions Type=forward,TargetGroupArn=$GREEN_TG
+                --listener-arn <YOUR_VALID_LISTENER_ARN> \
+                --default-actions Type=forward,TargetGroupArn=<GREEN_TARGET_GROUP>
                 """
             }
         }
@@ -55,11 +37,11 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment failed! Rolling back to Blue..."
+            echo 'Deployment failed! Rolling back to Blue...'
             sh """
             aws elbv2 modify-listener \
-              --listener-arn $ALB_LISTENER_ARN \
-              --default-actions Type=forward,TargetGroupArn=$BLUE_TG
+            --listener-arn <YOUR_VALID_LISTENER_ARN> \
+            --default-actions Type=forward,TargetGroupArn=<BLUE_TARGET_GROUP>
             """
         }
     }
