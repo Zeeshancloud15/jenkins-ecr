@@ -4,7 +4,6 @@ pipeline {
     environment {
         BLUE_SERVER = "54.242.239.106"
         GREEN_SERVER = "98.93.30.214"
-        SSH_CREDENTIALS = "blue-green-ssh" // Your SSH credential ID in Jenkins
         ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/1fae0ca6dbb83365"
         BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b"
         GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043"
@@ -18,14 +17,14 @@ pipeline {
                 echo "Checking out source code..."
                 git branch: 'main',
                     url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
-                    credentialsId: "${SSH_CREDENTIALS}"
+                    credentialsId: "blue-green-ssh"
             }
         }
 
         stage('Pull index.html from BLUE') {
             steps {
                 echo "Pulling index.html from BLUE server..."
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     sh """
                         scp -o StrictHostKeyChecking=no jenkins@${BLUE_SERVER}:/var/www/html/index.html ./index.html
                     """
@@ -36,7 +35,7 @@ pipeline {
         stage('Deploy to GREEN') {
             steps {
                 echo "Deploying index.html to GREEN server..."
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     sh """
                         scp -o StrictHostKeyChecking=no ./index.html jenkins@${GREEN_SERVER}:/var/www/html/index.html
                     """
@@ -47,7 +46,7 @@ pipeline {
         stage('Health Check GREEN') {
             steps {
                 echo "Checking GREEN server health..."
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     script {
                         def status = sh(
                             script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w %{http_code} http://localhost/index.html",
