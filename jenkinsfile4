@@ -2,22 +2,13 @@ pipeline {
     agent any
 
     environment {
-        // AWS CLI environment (ensure aws CLI is configured on Jenkins node)
-        AWS_DEFAULT_REGION = 'us-east-1'
-        
-        // BLUE and GREEN target groups
-        BLUE_TG = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b'
-        GREEN_TG = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043'
-
-        // Correct Listener ARN
-        LISTENER_ARN = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/1fae0ca6dbb83365'
-
-        // SSH credentials ID configured in Jenkins
-        SSH_CREDENTIALS = 'jenkins'
-        
-        // Server IPs
         BLUE_SERVER = '54.242.239.106'
         GREEN_SERVER = '98.93.30.214'
+        SSH_CREDENTIALS = 'blue-green-ssh' // SSH ID updated here
+        AWS_REGION = 'us-east-1'
+        LISTENER_ARN = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/1fae0ca6dbb83365'
+        BLUE_TG = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b'
+        GREEN_TG = 'arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043'
     }
 
     stages {
@@ -26,14 +17,14 @@ pipeline {
                 echo 'Checking out source code...'
                 git branch: 'main',
                     url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
-                    credentialsId: SSH_CREDENTIALS
+                    credentialsId: 'blue-green-ssh' // SSH ID used here for Git
             }
         }
 
         stage('Prepare index.html') {
             steps {
                 echo 'Pulling index.html from BLUE server...'
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     sh "scp -o StrictHostKeyChecking=no jenkins@${BLUE_SERVER}:/var/www/html/index.html ./index.html"
                 }
             }
@@ -42,7 +33,7 @@ pipeline {
         stage('Deploy to GREEN') {
             steps {
                 echo 'Deploying index.html to GREEN server...'
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     sh "scp -o StrictHostKeyChecking=no ./index.html jenkins@${GREEN_SERVER}:/var/www/html/index.html"
                 }
             }
@@ -51,15 +42,12 @@ pipeline {
         stage('Health Check') {
             steps {
                 echo 'Checking GREEN server health...'
-                sshagent([SSH_CREDENTIALS]) {
+                sshagent(['blue-green-ssh']) {
                     script {
-                        def status = sh(
-                            script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w %{http_code} http://localhost/index.html",
-                            returnStdout: true
-                        ).trim()
+                        def status = sh(script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w %{http_code} http://localhost/index.html", returnStdout: true).trim()
                         echo "HTTP Status: ${status}"
                         if (status != '200') {
-                            error "Health check failed! Status: ${status}"
+                            error "GREEN server health check failed!"
                         }
                     }
                 }
@@ -69,11 +57,7 @@ pipeline {
         stage('Switch Traffic to GREEN') {
             steps {
                 echo 'Switching traffic to GREEN target group...'
-                sh """
-                    aws elbv2 modify-listener \
-                        --listener-arn ${LISTENER_ARN} \
-                        --default-actions Type=forward,TargetGroupArn=${GREEN_TG}
-                """
+                sh "aws elbv2 modify-listener --listener-arn ${LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${GREEN_TG} --region ${AWS_REGION}"
             }
         }
     }
@@ -81,11 +65,7 @@ pipeline {
     post {
         failure {
             echo 'Deployment failed! Rolling back to BLUE target group...'
-            sh """
-                aws elbv2 modify-listener \
-                    --listener-arn ${LISTENER_ARN} \
-                    --default-actions Type=forward,TargetGroupArn=${BLUE_TG}
-            """
+            sh "aws elbv2 modify-listener --listener-arn ${LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${BLUE_TG} --region ${AWS_REGION}"
         }
     }
 }
