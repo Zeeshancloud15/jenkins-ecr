@@ -2,21 +2,18 @@ pipeline {
     agent any
 
     environment {
-        GREEN_SERVER_IP = '98.93.30.214'
-        BLUE_SERVER_IP  = '54.242.239.106'
+        GREEN_SERVER_IP = "98.93.30.214"
+        BLUE_SERVER_IP  = "54.242.239.106"
+        APP_PATH        = "/var/www/html"
     }
 
     stages {
 
-        stage('Checkout SCM') {
+        stage('Checkout Code') {
             steps {
-                checkout([$class: 'GitSCM', 
-                    branches: [[name: 'main']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
-                        credentialsId: 'ecr:us-east-1:blue-green-ssh1'
-                    ]]
-                ])
+                git branch: 'main',
+                    url: 'https://github.com/Zeeshancloud15/jenkins-ecr.git',
+                    credentialsId: 'blue-green-ssh'
             }
         }
 
@@ -24,10 +21,8 @@ pipeline {
             steps {
                 sshagent(['blue-green-ssh']) {
                     sh """
-                    # Copy files to Green server
-                    scp -o StrictHostKeyChecking=no index.html jenkins@${GREEN_SERVER_IP}:/var/www/html/
-                    # Restart web service on Green server
-                    ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER_IP} 'sudo systemctl restart httpd'
+                        echo "Deploying to GREEN server..."
+                        scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${GREEN_SERVER_IP}:${APP_PATH}/
                     """
                 }
             }
@@ -36,11 +31,12 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://${GREEN_SERVER_IP}", returnStdout: true).trim()
-                    if (status != '200') {
-                        error "Health check failed! Status: ${status}"
+                    echo "Performing health check on GREEN server..."
+                    def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://${GREEN_SERVER_IP}/index.html", returnStdout: true).trim()
+                    if (status != "200") {
+                        error "Health check failed! HTTP status: ${status}"
                     } else {
-                        echo "Green server is healthy ✅"
+                        echo "Health check passed!"
                     }
                 }
             }
@@ -48,27 +44,24 @@ pipeline {
 
         stage('Switch Traffic') {
             steps {
-                sshagent(['blue-green-ssh1']) {
-                    sh """
-                    # Example: Switching traffic to Green server
-                    echo "Traffic switched to Green server (${GREEN_SERVER_IP}) ✅"
-                    # If using ELB, you can replace with aws elbv2 modify-listener commands
-                    """
-                }
+                echo "Switching traffic to GREEN..."
+                // Add your load balancer / DNS switch commands here if needed
             }
         }
+
     }
 
     post {
         failure {
-            echo 'Deployment failed! Rolling back to Blue...'
-            sshagent(['blue-green-ssh1']) {
+            echo "Deployment failed! Rolling back to BLUE..."
+            sshagent(['blue-green-ssh']) {
                 sh """
-                # Rollback: point traffic back to Blue server
-                echo "Traffic switched back to Blue server (${BLUE_SERVER_IP}) ✅"
-                # If using ELB, you can replace with aws elbv2 modify-listener commands
+                    scp -o StrictHostKeyChecking=no ${WORKSPACE}/index.html jenkins@${BLUE_SERVER_IP}:${APP_PATH}/
                 """
             }
+        }
+        always {
+            echo "Cleaning up..."
         }
     }
 }
