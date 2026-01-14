@@ -1,13 +1,21 @@
 pipeline {
     agent any
     environment {
+        // Target Groups
         BLUE_TG = "blue-tg"
         GREEN_TG = "green-tg"
-        ALB_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/339494166/xxxxxxx" // Replace with actual ARN
+        
+        // ALB Listener ARN (replace this with actual listener ARN from AWS)
+        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/xxxxxxxxxxxxxxxx" 
+
+        // Servers
         BLUE_SERVER = "jenkins@54.242.239.106"
         GREEN_SERVER = "jenkins@98.93.30.214"
+
+        // Git repo
         GIT_REPO = "https://github.com/Zeeshancloud15/jenkins-ecr.git"
     }
+
     stages {
         stage('Checkout Code') {
             steps {
@@ -17,6 +25,7 @@ pipeline {
 
         stage('Deploy to Green') {
             steps {
+                // SSH Agent plugin required
                 sshagent(['blue-green-ssh']) {
                     sh """
                     scp -o StrictHostKeyChecking=no index.html $GREEN_SERVER:/var/www/html/index.html
@@ -28,6 +37,7 @@ pipeline {
 
         stage('Health Check') {
             steps {
+                // Simple health check of Green server
                 sh 'curl -f http://98.93.30.214 || exit 1'
             }
         }
@@ -35,18 +45,21 @@ pipeline {
         stage('Switch Traffic to Green') {
             steps {
                 sh """
-                aws elbv2 modify-listener --listener-arn $ALB_ARN \
-                --default-actions Type=forward,TargetGroupArn=$GREEN_TG
+                aws elbv2 modify-listener \
+                  --listener-arn $ALB_LISTENER_ARN \
+                  --default-actions Type=forward,TargetGroupArn=$GREEN_TG
                 """
             }
         }
     }
+
     post {
         failure {
             echo "Deployment failed! Rolling back to Blue..."
             sh """
-            aws elbv2 modify-listener --listener-arn $ALB_ARN \
-            --default-actions Type=forward,TargetGroupArn=$BLUE_TG
+            aws elbv2 modify-listener \
+              --listener-arn $ALB_LISTENER_ARN \
+              --default-actions Type=forward,TargetGroupArn=$BLUE_TG
             """
         }
     }
