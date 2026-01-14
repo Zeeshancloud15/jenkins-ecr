@@ -5,10 +5,13 @@ pipeline {
         GREEN_SERVER = "98.93.30.214"
         REMOTE_PATH = "/var/www/html/index.html"
         LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
-        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/789abc/123def"
-        BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/blue-tg/abc123"
-        GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/green-tg/def456"
+
+        // Replace these with your real ALB and target group ARNs
+        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/abc123def456"
+        BLUE_TG_ARN     = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/xyz789"
+        GREEN_TG_ARN    = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/def456"
     }
+
     stages {
         stage('Checkout SCM') {
             steps {
@@ -34,10 +37,10 @@ pipeline {
             steps {
                 echo "Deploying index.html to GREEN server..."
                 sshagent(['blue-green-ssh']) {
-                    // Use sudo if permission denied
                     sh """
+                    # Attempt direct copy, fallback to sudo if permission denied
                     scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH} || \
-                    ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} 'sudo cp ${REMOTE_PATH} ${REMOTE_PATH}'
+                    ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} 'sudo cp ${LOCAL_WORKSPACE_FILE} ${REMOTE_PATH}'
                     """
                 }
             }
@@ -48,7 +51,10 @@ pipeline {
                 echo "Checking GREEN server health..."
                 sshagent(['blue-green-ssh']) {
                     script {
-                        def status = sh(script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w '%{http_code}' http://localhost/index.html", returnStdout: true).trim()
+                        def status = sh(
+                            script: "ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} curl -s -o /dev/null -w '%{http_code}' http://localhost/index.html",
+                            returnStdout: true
+                        ).trim()
                         echo "HTTP Status: ${status}"
                         if (status != "200") {
                             error "GREEN server health check failed!"
@@ -62,7 +68,9 @@ pipeline {
             steps {
                 echo "Switching traffic to GREEN target group..."
                 sh """
-                aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
+                aws elbv2 modify-listener \
+                    --listener-arn ${ALB_LISTENER_ARN} \
+                    --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
                 """
             }
         }
@@ -70,9 +78,11 @@ pipeline {
 
     post {
         failure {
-            echo "Deployment failed! Rolling back to BLUE..."
+            echo "Deployment failed! Rolling back to BLUE target group..."
             sh """
-            aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
+            aws elbv2 modify-listener \
+                --listener-arn ${ALB_LISTENER_ARN} \
+                --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
             """
         }
     }
