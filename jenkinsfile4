@@ -1,4 +1,4 @@
-pipeline {
+pipeline { 
     agent any
     environment {
         BLUE_SERVER = "54.242.239.106"
@@ -6,12 +6,13 @@ pipeline {
         REMOTE_PATH = "/var/www/html/index.html"
         LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
 
-        // Replace these with your real ALB and target group ARNs
-        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/abc123def456"
-        BLUE_TG_ARN     = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/xyz789"
-        GREEN_TG_ARN    = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/def456"
-    }
+        // Correct ALB Listener ARN (replace with your exact ARN from AWS console)
+        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/789abc123def"
 
+        // Correct Target Group ARNs (replace with your exact TG ARNs)
+        BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/xyz789"
+        GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/def456"
+    }
     stages {
         stage('Checkout SCM') {
             steps {
@@ -37,11 +38,7 @@ pipeline {
             steps {
                 echo "Deploying index.html to GREEN server..."
                 sshagent(['blue-green-ssh']) {
-                    sh """
-                    # Attempt direct copy, fallback to sudo if permission denied
-                    scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH} || \
-                    ssh -o StrictHostKeyChecking=no jenkins@${GREEN_SERVER} 'sudo cp ${LOCAL_WORKSPACE_FILE} ${REMOTE_PATH}'
-                    """
+                    sh "scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH}"
                 }
             }
         }
