@@ -1,0 +1,56 @@
+pipeline {
+    agent any
+    environment {
+        BLUE_TG = "blue-tg"                       // Your ALB Blue target group
+        GREEN_TG = "green-tg"                     // Your ALB Green target group
+        ALB_ARN = "<alb-listener-arn>"            // ALB Listener ARN
+        GREEN_SERVER = "ec2-user@<green-server-ip>" // Green server SSH
+    }
+    stages {
+        stage('Checkout Code') {
+            steps {
+                // Pull your latest HTML code from GitHub
+                git branch: 'main', url: 'https://github.com/<username>/my-html-app.git'
+            }
+        }
+
+        stage('Deploy to Green') {
+            steps {
+                // Use SSH credentials to deploy index.html to Green server
+                sshagent(['blue-green-ssh']) {
+                    sh """
+                    scp -o StrictHostKeyChecking=no index.html $GREEN_SERVER:/var/www/html/index.html
+                    ssh $GREEN_SERVER 'sudo systemctl restart httpd'
+                    """
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                // Verify Green server is working
+                sh 'curl -f http://<green-server-ip> || exit 1'
+            }
+        }
+
+        stage('Switch Traffic to Green') {
+            steps {
+                // Switch ALB traffic from Blue → Green
+                sh """
+                aws elbv2 modify-listener --listener-arn $ALB_ARN \
+                --default-actions Type=forward,TargetGroupArn=$GREEN_TG
+                """
+            }
+        }
+    }
+    post {
+        failure {
+            echo "Deployment failed! Rolling back to Blue..."
+            // Rollback ALB traffic to Blue
+            sh """
+            aws elbv2 modify-listener --listener-arn $ALB_ARN \
+            --default-actions Type=forward,TargetGroupArn=$BLUE_TG
+            """
+        }
+    }
+}
