@@ -1,4 +1,4 @@
-pipeline { 
+pipeline {
     agent any
     environment {
         BLUE_SERVER = "54.242.239.106"
@@ -6,12 +6,12 @@ pipeline {
         REMOTE_PATH = "/var/www/html/index.html"
         LOCAL_WORKSPACE_FILE = "${env.WORKSPACE}/index.html"
 
-        // Correct ALB Listener ARN (replace with your exact ARN from AWS console)
-        ALB_LISTENER_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:listener/app/alb-bg/da7aa830e5c34bb8/789abc123def"
+        # Replace this with your actual listener ARN from AWS
+        ALB_LISTENER_ARN = "LISTENER_ARN_HERE"
 
-        // Correct Target Group ARNs (replace with your exact TG ARNs)
-        BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/xyz789"
-        GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/def456"
+        # Correct target group ARNs
+        BLUE_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/blue-tg/ce86ede8e7af1d3b"
+        GREEN_TG_ARN = "arn:aws:elasticloadbalancing:us-east-1:894103237522:targetgroup/green-tg/8fb6bf5cde4f6043"
     }
     stages {
         stage('Checkout SCM') {
@@ -38,7 +38,9 @@ pipeline {
             steps {
                 echo "Deploying index.html to GREEN server..."
                 sshagent(['blue-green-ssh']) {
-                    sh "scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH}"
+                    sh """
+                    scp -o StrictHostKeyChecking=no ${LOCAL_WORKSPACE_FILE} jenkins@${GREEN_SERVER}:${REMOTE_PATH}
+                    """
                 }
             }
         }
@@ -65,9 +67,7 @@ pipeline {
             steps {
                 echo "Switching traffic to GREEN target group..."
                 sh """
-                aws elbv2 modify-listener \
-                    --listener-arn ${ALB_LISTENER_ARN} \
-                    --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
+                aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${GREEN_TG_ARN}
                 """
             }
         }
@@ -77,9 +77,7 @@ pipeline {
         failure {
             echo "Deployment failed! Rolling back to BLUE target group..."
             sh """
-            aws elbv2 modify-listener \
-                --listener-arn ${ALB_LISTENER_ARN} \
-                --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
+            aws elbv2 modify-listener --listener-arn ${ALB_LISTENER_ARN} --default-actions Type=forward,TargetGroupArn=${BLUE_TG_ARN}
             """
         }
     }
